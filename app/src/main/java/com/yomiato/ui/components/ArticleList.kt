@@ -2,12 +2,14 @@ package com.yomiato.ui.components
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -32,9 +34,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,17 +76,60 @@ fun ArticleList(
     }
 
     var selected by remember { mutableStateOf<ArticleEntity?>(null) }
+    var pendingDelete by remember { mutableStateOf<ArticleEntity?>(null) }
 
     LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = contentPadding) {
         items(items, key = { it.article.id }) { item ->
-            ArticleRow(
-                item = item,
-                onClick = { onOpenArticle(item.article.id) },
-                onLongClick = { selected = item.article },
-                onRetry = { actionsViewModel.retry(item.article.id) },
+            val article = item.article
+            val dismissState = rememberSwipeToDismissBoxState(
+                confirmValueChange = { value ->
+                    when (value) {
+                        // 左スワイプ＝アーカイブ（アーカイブ画面では解除）
+                        SwipeToDismissBoxValue.EndToStart -> actionsViewModel.toggleArchive(article)
+                        // 右スワイプ＝削除（確認ダイアログ）
+                        SwipeToDismissBoxValue.StartToEnd -> pendingDelete = article
+                        SwipeToDismissBoxValue.Settled -> Unit
+                    }
+                    // どちら方向も自動で消さず（false）、DB の更新で一覧から外れるのに任せる
+                    false
+                },
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+            SwipeToDismissBox(
+                state = dismissState,
+                backgroundContent = {
+                    SwipeBackground(dismissState.dismissDirection, archived = article.isArchived)
+                },
+            ) {
+                Surface(color = MaterialTheme.colorScheme.surface) {
+                    Column {
+                        ArticleRow(
+                            item = item,
+                            onClick = { onOpenArticle(item.article.id) },
+                            onLongClick = { selected = item.article },
+                            onRetry = { actionsViewModel.retry(item.article.id) },
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    }
+                }
+            }
         }
+    }
+
+    pendingDelete?.let { article ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("記事を削除") },
+            text = { Text("この記事を完全に削除します。元に戻せません。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    actionsViewModel.delete(article.id)
+                    pendingDelete = null
+                }) { Text("削除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("キャンセル") }
+            },
+        )
     }
 
     selected?.let { article ->
@@ -322,6 +371,51 @@ private fun FolderRadioRow(label: String, selected: Boolean, onClick: () -> Unit
     ) {
         RadioButton(selected = selected, onClick = onClick)
         Text(label, modifier = Modifier.padding(start = 4.dp))
+    }
+}
+
+/** スワイプ中に後ろに表示される背景。右=削除（赤）、左=アーカイブ。 */
+@Composable
+private fun SwipeBackground(direction: SwipeToDismissBoxValue, archived: Boolean) {
+    val isDelete = direction == SwipeToDismissBoxValue.StartToEnd
+    val color = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.errorContainer
+        SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.secondaryContainer
+        SwipeToDismissBoxValue.Settled -> MaterialTheme.colorScheme.surface
+    }
+    val tint = if (isDelete) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    val icon = when {
+        isDelete -> Icons.Filled.Delete
+        archived -> Icons.Filled.Unarchive
+        else -> Icons.Filled.Archive
+    }
+    val label = when {
+        isDelete -> "削除"
+        archived -> "アーカイブ解除"
+        else -> "アーカイブ"
+    }
+    val alignment = if (isDelete) Alignment.CenterStart else Alignment.CenterEnd
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(color)
+            .padding(horizontal = 24.dp),
+        contentAlignment = alignment,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = label, tint = tint)
+            Text(
+                label,
+                color = tint,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
     }
 }
 
