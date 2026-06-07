@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DownloadForOffline
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -64,6 +66,8 @@ fun ReaderScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    // 元ページ（アプリ内 WebView）表示に切り替えているか。記事が変わったらリセット。
+    var showOriginal by remember(article?.article?.id) { mutableStateOf(false) }
 
     LaunchedEffect(article?.article?.id) {
         if (article != null) viewModel.onOpened()
@@ -93,6 +97,14 @@ fun ReaderScreen(
                 actions = {
                     val a = article?.article
                     if (a != null) {
+                        IconButton(onClick = { showOriginal = !showOriginal }) {
+                            Icon(
+                                if (showOriginal) Icons.AutoMirrored.Filled.Article else Icons.Filled.Language,
+                                contentDescription = if (showOriginal) "リーダー表示" else "元ページ表示",
+                                tint = if (showOriginal) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         IconButton(onClick = { viewModel.summarize() }) {
                             Icon(
                                 Icons.Filled.AutoAwesome,
@@ -154,6 +166,7 @@ fun ReaderScreen(
                     settings = settings,
                     context = context,
                     viewModel = viewModel,
+                    showOriginal = showOriginal,
                 )
             }
         }
@@ -167,10 +180,21 @@ private fun ReaderBody(
     settings: AppSettings,
     context: android.content.Context,
     viewModel: ReaderViewModel,
+    showOriginal: Boolean,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         when {
             a == null || art == null -> LoadingOrEmpty(Modifier)
+
+            // ユーザーが「元ページ表示」に切り替えた場合（抽出が不十分なページ向け）
+            showOriginal -> OriginalPageView(
+                url = art.url,
+                snapshotPath = viewModel.snapshotPath(),
+                onSnapshotSaved = viewModel::onSnapshotSaved,
+                onOpenOriginal = { openUrl(context, art.url) },
+                onRetry = viewModel::retry,
+                bannerText = "元ページを表示中（リーダーに戻すには上部のアイコン）",
+            )
 
             // オフライン本文（画像埋め込み済み）を最優先
             art.offlineContentHtml != null -> ReaderContent(
@@ -199,14 +223,13 @@ private fun ReaderBody(
             )
 
             // 本文抽出に失敗：アプリ内 WebView で元ページ表示＋スナップショット保存
-            else -> FailedView(
+            else -> OriginalPageView(
                 url = art.url,
-                title = art.title,
                 snapshotPath = viewModel.snapshotPath(),
                 onSnapshotSaved = viewModel::onSnapshotSaved,
                 onOpenOriginal = { openUrl(context, art.url) },
                 onRetry = viewModel::retry,
-                modifier = Modifier,
+                bannerText = "本文を抽出できないページです。元ページを表示しています。",
             )
         }
     }
@@ -287,24 +310,25 @@ private fun LoadingOrEmpty(modifier: Modifier = Modifier) {
 }
 
 /**
- * 本文抽出に失敗した記事（x.com など JS 描画サイト）向け。
- * アプリ内 WebView で元ページを表示し、その場でスナップショット保存できる。
+ * アプリ内 WebView で元ページ（完全な実ページ）を表示する。
+ * 本文抽出に失敗したページ（x.com 等）や、抽出が不十分なページ（GitHub の一覧等）で
+ * ユーザーが元ページに切り替えたときに使う。その場でスナップショット保存も可能。
  */
 @Composable
-private fun FailedView(
+private fun OriginalPageView(
     url: String,
-    title: String?,
     snapshotPath: String,
     onSnapshotSaved: () -> Unit,
     onOpenOriginal: () -> Unit,
     onRetry: () -> Unit,
+    bannerText: String,
     modifier: Modifier = Modifier,
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
     Column(modifier = modifier.fillMaxSize()) {
         Text(
-            "本文を抽出できないページです。元ページを表示しています。",
+            bannerText,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
