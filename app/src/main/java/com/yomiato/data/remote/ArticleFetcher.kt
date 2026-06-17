@@ -47,6 +47,21 @@ class ArticleFetcher @Inject constructor(
         val html = client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("HTTP ${response.code}")
             val body = response.body ?: error("empty body")
+
+            // HTML 以外（PDF・画像・動画など）は抽出対象外として弾く。
+            val contentType = response.header("Content-Type")?.lowercase().orEmpty()
+            if (contentType.isNotEmpty() &&
+                !contentType.contains("html") &&
+                !contentType.contains("xml") &&
+                !contentType.contains("text/")
+            ) {
+                error("unsupported content-type: $contentType")
+            }
+
+            // 巨大ページによる OOM を防ぐためサイズ上限を設ける（charset は body.string() が解釈）。
+            val source = body.source()
+            source.request(MAX_HTML_BYTES + 1)
+            if (source.buffer.size > MAX_HTML_BYTES) error("body too large")
             body.string()
         }
 
@@ -101,6 +116,8 @@ class ArticleFetcher @Inject constructor(
 
     companion object {
         private const val CHARS_PER_MINUTE = 500
+        private const val MAX_HTML_BYTES = 5L * 1024 * 1024  // 取得 HTML の上限 ~5MB
+
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/122.0 Safari/537.36"

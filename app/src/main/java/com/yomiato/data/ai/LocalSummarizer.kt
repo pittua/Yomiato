@@ -89,6 +89,17 @@ class LocalSummarizer @Inject constructor() {
         tokenizer.tokenize(title).filter { keepForTag(it) }.forEach { add(baseOf(it), 3) }
         englishWords(title).forEach { add(it, 3) }
 
+        // 既存タグが本文・タイトルに出現していれば、形態素解析で複合語が分割されても
+        // 候補から漏れないよう直接加える（「既存タグを流用」する設計の担保）。
+        val haystack = "$title\n$text"
+        existing.forEach { tag ->
+            val t = tag.trim()
+            if (t.isNotEmpty() && haystack.contains(t, ignoreCase = true)) {
+                val key = if (t.all { it.code < 128 }) t.lowercase(Locale.ROOT) else t
+                counts[key] = (counts[key] ?: 0) + 5
+            }
+        }
+
         val ranked = counts.entries.sortedByDescending { it.value }.map { it.key }
         val existingLower = existing.map { it.lowercase(Locale.ROOT) }.toSet()
         val preferred = ranked.filter { it.lowercase(Locale.ROOT) in existingLower }

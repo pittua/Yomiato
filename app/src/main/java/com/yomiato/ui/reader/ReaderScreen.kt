@@ -170,9 +170,17 @@ private fun WebPage(
         modifier = Modifier.fillMaxSize(),
         factory = { ctx ->
             WebView(ctx).apply {
+                // 元ページ表示には JS / DOM ストレージが必要。
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
+                // オフライン保存（MHTML スナップショット）を file:// で読むためファイルアクセスは許可するが、
+                // file:// から他ファイルや任意オリジンへ到達できる経路は明示的に塞ぐ（情報漏えい対策）。
                 settings.allowFileAccess = true
+                settings.allowContentAccess = false
+                @Suppress("DEPRECATION")
+                settings.allowFileAccessFromFileURLs = false
+                @Suppress("DEPRECATION")
+                settings.allowUniversalAccessFromFileURLs = false
                 webViewClient = object : WebViewClient() {
                     override fun onReceivedError(
                         view: WebView?,
@@ -191,6 +199,11 @@ private fun WebPage(
                 loadUrl(url)
                 onWebViewReady(this)
             }
+        },
+        onRelease = { webView ->
+            // 画面破棄時に WebView を確実に解放（リーク防止）。
+            webView.stopLoading()
+            webView.destroy()
         },
     )
 }

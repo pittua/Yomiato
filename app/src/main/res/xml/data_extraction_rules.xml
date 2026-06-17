@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12 以上のバックアップ／端末間転送の対象設定。
+  暗号化済み API キー（EncryptedSharedPreferences）は復元先で復号できないため除外する。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="yomiato_secure.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="yomiato_secure.xml" />
+    </device-transfer>
+</data-extraction-rules>

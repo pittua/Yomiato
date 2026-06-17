@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 以下（自動バックアップ）の対象設定。
+  暗号化済み API キー（EncryptedSharedPreferences）はマスターキーが Keystore に残り
+  復元先で復号できないため、バックアップ対象から除外する。
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="yomiato_secure.xml" />
+</full-backup-content>
